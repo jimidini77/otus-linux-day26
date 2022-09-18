@@ -3,7 +3,6 @@
   hosts: all
   become: true
   vars:
-#    nginx_listen_port: 80
     backup_vm_ip: 192.168.11.160
     client_vm_ip: 192.168.11.150
 
