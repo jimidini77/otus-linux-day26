@@ -58,14 +58,6 @@
   hosts: client
   become: true
   tasks:
-    # - name: SSH KEYPAIR GENERATION
-    #   openssh_keypair:
-    #     path: /home/borg/.ssh/id_ssh_rsa
-    #     owner: borg
-    #     size: 2048
-    #   tags:
-    #     - ssh-config
-
     - name: CLIENT CONFIG | Fill private key
       copy:
         src: /tmp/id_ssh_rsa
@@ -119,15 +111,6 @@
         group: borg
       tags:
         - user
-
-    # - name: BACKUP CONFIG | Change mode /home/borg/.ssh/
-    #   file:
-    #     path: /home/borg/.ssh
-    #     mode: u=rwx,g-rwx,o-rwx
-    #     state: directory
-    #   tags:
-    #     - user
-    #     - ssh-config
 
     - name: BACKUP CONFIG | Touch a file, /home/borg/.ssh/authorized_keys 
       file:
