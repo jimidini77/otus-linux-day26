@@ -2,9 +2,6 @@
 - name: SW CONFIG | Install and configure software
   hosts: all
   become: true
-  vars:
-    backup_vm_ip: 192.168.11.160
-    client_vm_ip: 192.168.11.150
 
   tasks:
     - name: SW CONFIG | Install EPEL Repo package from standart repo
@@ -23,51 +20,70 @@
         - borg-package
         - packages
 
-    - name: USER CONFIG | Add the user 'borg' 
-      user:
-        name: borg
-        comment: borg backup
-      tags:
-        - user
-
-    - name: BACKUP CONFIG | Change mode /home/borg/.ssh/
+- name: CLIENT CONFIG
+  hosts: client
+  become: true
+  vars:
+    backup_vm_ip: 192.168.11.160
+    client_vm_ip: 192.168.11.150
+  tasks:
+    - name: CLIENT CONFIG | Create /root/.ssh/
       file:
-        path: /home/borg/.ssh
+        path: /root/.ssh
         mode: u=rwx,g-rwx,o-rwx
         state: directory
-        owner: borg
-        group: borg
+        owner: root
+        group: root
       tags:
         - user
         - ssh-config
 
-
-- name: SSH CONFIG
-  hosts: 127.0.0.1
-  connection: local
-  become: true
-  tasks:
     - name: SSH KEYPAIR GENERATION
       openssh_keypair:
-        path: /tmp/id_ssh_rsa
+        path: /root/.ssh/id_ssh_rsa
         size: 2048
       tags:
         - ssh-config
 
-- name: CLIENT CONFIG
-  hosts: client
-  become: true
-  tasks:
-    - name: CLIENT CONFIG | Fill private key
-      copy:
-        src: /tmp/id_ssh_rsa
-        dest: /home/borg/.ssh/id_ssh_rsa
-        mode: u=rw,g-rwx,o-rwx
-        owner: borg
-        group: borg
-      tags:
-        - ssh-config
+    - name: Fetch public key
+      fetch:
+        src: /root/.ssh/id_ssh_rsa.pub
+        dest: /tmp/id_ssh_rsa.pub
 
+    - name: Tell client about backup server
+      shell: ssh-keyscan -H 192.168.11.160 >> ~/.ssh/known_hosts
+
+    # - name: CLIENT CONFIG | Fill private key
+    #   copy:
+    #     src: /tmp/id_ssh_rsa
+    #     dest: /home/borg/.ssh/id_ssh_rsa
+    #     mode: u=rw,g-rwx,o-rwx
+    #     owner: borg
+    #     group: borg
+    #   tags:
+    #     - ssh-config
+
+    # - name: CLIENT CONFIG | Fill public key
+    #   copy:
+    #     src: /tmp/id_ssh_rsa.pub
+    #     dest: /home/borg/.ssh/id_ssh_rsa.pub
+    #     mode: u=rw,g=r,o=r
+    #     owner: borg
+    #     group: borg
+    #   tags:
+    #     - ssh-config
+
+# - name: SSH CONFIG
+#   hosts: 127.0.0.1
+#   connection: local
+#   become: true
+#   tasks:
+#     - name: SSH KEYPAIR GENERATION
+#       openssh_keypair:
+#         path: /tmp/id_ssh_rsa
+#         size: 2048
+#       tags:
+#         - ssh-config
 
 - name: BACKUP CONFIG | Disk Configuration
   hosts: backup
@@ -92,7 +108,7 @@
       file:
         path: /var/backup
         state: directory
-      tags: 
+      tags:
         - disk
 
     - name: BACKUP CONFIG | Mount disk
@@ -101,8 +117,15 @@
         src: /dev/sdb1
         state: mounted
         fstype: ext4
-      tags: 
+      tags:
         - disk
+
+    - name: BACKUP CONFIG | Add the user 'borg'
+      user:
+        name: borg
+        comment: borg backup
+      tags:
+        - user
 
     - name: BACKUP CONFIG | Change file ownership, group and permissions
       file:
@@ -112,7 +135,18 @@
       tags:
         - user
 
-    - name: BACKUP CONFIG | Touch a file, /home/borg/.ssh/authorized_keys 
+    - name: BACKUP CONFIG | Create /home/borg/.ssh/
+      file:
+        path: /home/borg/.ssh
+        mode: u=rwx,g-rwx,o-rwx
+        state: directory
+        owner: borg
+        group: borg
+      tags:
+        - user
+        - ssh-config
+
+    - name: BACKUP CONFIG | Touch a file, /home/borg/.ssh/authorized_keys
       file:
         path: /home/borg/.ssh/authorized_keys
         state: touch
@@ -121,7 +155,7 @@
         - user
         - ssh-config
 
-    - name: BACKUP CONFIG | fill /home/borg/.ssh/authorized_keys 
+    - name: BACKUP CONFIG | fill /home/borg/.ssh/authorized_keys
       authorized_key:
         user: borg
         state: present
@@ -129,6 +163,25 @@
       tags:
         - ssh-config
 
+- name: CLIENT CONFIG | Borg
+  hosts: client
+  become: true
+  tasks:
+    - name: CLIENT CONFIG | Borg init repo
+      shell: borg init --encryption=repokey borg@192.168.11.160:/var/backup/ -v | logger -t borgbackup
+      environment:
+        BORG_NEW_PASSPHRASE: "secret"
+        # BORG_LOGGING_CONF:
+      tags:
+        - borg
+
+    - name: CLIENT CONFIG | Borg create backup
+      shell: borg create -v --stats --list borg@192.168.11.160:/var/backup/::"etc-{now:%Y-%m-%d_%H:%M:%S}" /etc | logger -t borgbackup
+      environment:
+        BORG_NEW_PASSPHRASE: "secret"
+        # BORG_LOGGING_CONF:
+      tags:
+        - borg-create-backup
 #        fs_type: ext4
 
 #    - name: NGINX | configure logging
@@ -136,7 +189,7 @@
 #        path: /etc/nginx/nginx.conf
 #        insertafter: "{{ item.search }}"
 #        line: "{{ item.after }}"
-#      with_items: 
+#      with_items:
 #        - { search: '\s*error_log.*', after: 'error_log syslog:server={{ log_vm_ip }}:514,tag=nginx_error;' }
 #        - { search: '\s*access_log.*', after: 'access_log syslog:server={{ log_vm_ip }}:514,tag=nginx_access,severity=info combined;' }
 #      notify:
@@ -147,7 +200,7 @@
 #
 #    - name: NGINX | Audit config changes
 #      blockinfile:
-#        path: /etc/audit/rules.d/audit.rules 
+#        path: /etc/audit/rules.d/audit.rules
 #        block: |
 #          -w /etc/nginx/nginx.conf -p wa -k nginx_conf
 #          -w /etc/nginx/default.d/ -p wa -k nginx_conf
@@ -168,7 +221,7 @@
 #        path: "{{ item.file }}"
 #        regexp: "{{ item.search }}"
 #        line: "{{ item.replace }}"
-#      with_items: 
+#      with_items:
 #        - { search: '^log_format = .*', replace: 'log_format = RAW', file: '/etc/audit/auditd.conf' }
 #        - { search: '^name_format = .*', replace: 'name_format = HOSTNAME', file: '/etc/audit/auditd.conf' }
 #        - { search: '^active = .*', replace: 'active = yes', file: '/etc/audisp/plugins.d/au-remote.conf' }

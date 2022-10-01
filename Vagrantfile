@@ -34,7 +34,7 @@ file_to_disk = './sata1.vdi'
   config.vm.define "master" do |master|
     master.vm.box = "centos/7"
     master.vm.network "private_network", ip: "192.168.11.140"
-    master.vm.hostname = "client"
+    master.vm.hostname = "master"
     master.vm.provider :virtualbox do |vb|
       vb.customize ["modifyvm", :id, "--memory", "512"]
       vb.customize ["modifyvm", :id, "--cpus", "2"]
