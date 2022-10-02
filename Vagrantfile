@@ -1,3 +1,6 @@
+# -*- mode: ruby -*-
+# vim: set ft=ruby :
+
 Vagrant.configure("2") do |config|
 config.vm.synced_folder ".", "/vagrant", disabled: true
 file_to_disk = './sata1.vdi'
@@ -19,6 +22,13 @@ file_to_disk = './sata1.vdi'
         vb.customize ['storageattach', :id, '--storagectl', 'SATA', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', file_to_disk]
      end
     end
+    backup.vm.provision "ansible" do |ansible|
+      ansible.playbook = "ansible/provision.yml"
+      ansible.inventory_path = "ansible/hosts"
+      ansible.host_key_checking = "false"
+      ansible.limit = "all"
+      ansible.verbose = "true"
+    end
   end
 
   config.vm.define "client" do |client|
@@ -28,6 +38,13 @@ file_to_disk = './sata1.vdi'
     client.vm.provider :virtualbox do |vb|
       vb.customize ["modifyvm", :id, "--memory", "512"]
       vb.customize ["modifyvm", :id, "--cpus", "2"]
+    end
+    client.vm.provision "ansible" do |ansible|
+      ansible.playbook = "ansible/provision.yml"
+      ansible.inventory_path = "ansible/hosts"
+      ansible.host_key_checking = "false"
+      ansible.limit = "all"
+      ansible.verbose = "true"
     end
   end
 
