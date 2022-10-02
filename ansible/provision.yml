@@ -37,53 +37,27 @@
       tags:
         - user
         - ssh-config
+        - client1
 
     - name: SSH KEYPAIR GENERATION
       openssh_keypair:
-        path: /root/.ssh/id_ssh_rsa
+        path: /root/.ssh/id_rsa
         size: 2048
       tags:
         - ssh-config
+        - client2
 
     - name: Fetch public key
       fetch:
-        src: /root/.ssh/id_ssh_rsa.pub
-        dest: /tmp/id_ssh_rsa.pub
+        src: /root/.ssh/id_rsa.pub
+        dest: /tmp/id_rsa.pub
+      tags:
+        - client3
 
     - name: Tell client about backup server
       shell: ssh-keyscan -H 192.168.11.160 >> ~/.ssh/known_hosts
-
-    # - name: CLIENT CONFIG | Fill private key
-    #   copy:
-    #     src: /tmp/id_ssh_rsa
-    #     dest: /home/borg/.ssh/id_ssh_rsa
-    #     mode: u=rw,g-rwx,o-rwx
-    #     owner: borg
-    #     group: borg
-    #   tags:
-    #     - ssh-config
-
-    # - name: CLIENT CONFIG | Fill public key
-    #   copy:
-    #     src: /tmp/id_ssh_rsa.pub
-    #     dest: /home/borg/.ssh/id_ssh_rsa.pub
-    #     mode: u=rw,g=r,o=r
-    #     owner: borg
-    #     group: borg
-    #   tags:
-    #     - ssh-config
-
-# - name: SSH CONFIG
-#   hosts: 127.0.0.1
-#   connection: local
-#   become: true
-#   tasks:
-#     - name: SSH KEYPAIR GENERATION
-#       openssh_keypair:
-#         path: /tmp/id_ssh_rsa
-#         size: 2048
-#       tags:
-#         - ssh-config
+      tags:
+        - client4
 
 - name: BACKUP CONFIG | Disk Configuration
   hosts: backup
@@ -126,6 +100,7 @@
         comment: borg backup
       tags:
         - user
+        - backup1
 
     - name: BACKUP CONFIG | Change file ownership, group and permissions
       file:
@@ -134,6 +109,7 @@
         group: borg
       tags:
         - user
+        - backup2
 
     - name: BACKUP CONFIG | Create /home/borg/.ssh/
       file:
@@ -145,23 +121,16 @@
       tags:
         - user
         - ssh-config
-
-    - name: BACKUP CONFIG | Touch a file, /home/borg/.ssh/authorized_keys
-      file:
-        path: /home/borg/.ssh/authorized_keys
-        state: touch
-        mode: u=rw,g-rwx,o-rwx
-      tags:
-        - user
-        - ssh-config
+        - backup3
 
     - name: BACKUP CONFIG | fill /home/borg/.ssh/authorized_keys
       authorized_key:
         user: borg
         state: present
-        key: "{{ lookup('file', '/tmp/id_ssh_rsa.pub') }}"
+        key: "{{ lookup('file', '/tmp/id_rsa.pub/client/root/.ssh/id_rsa.pub') }}"
       tags:
         - ssh-config
+        - backup5
 
 - name: CLIENT CONFIG | Borg
   hosts: client
@@ -175,13 +144,31 @@
       tags:
         - borg
 
-    - name: CLIENT CONFIG | Borg create backup
-      shell: borg create -v --stats --list borg@192.168.11.160:/var/backup/::"etc-{now:%Y-%m-%d_%H:%M:%S}" /etc | logger -t borgbackup
-      environment:
-        BORG_NEW_PASSPHRASE: "secret"
-        # BORG_LOGGING_CONF:
+    - name: CLIENT CONFIG | Borg service & timer
+      copy:
+        src: '{{ item }}'
+        dest: /etc/systemd/system/
+      loop:
+        - 'borg-backup.service'
+        - 'borg-backup.timer'
       tags:
-        - borg-create-backup
+        - systemd
+
+    - name: CLIENT CONFIG | Borg service & timer
+      systemd:
+        name: borg-backup.timer
+        enabled: yes
+        state: started
+        daemon_reload: yes
+      tags:
+        - systemd
+    # - name: CLIENT CONFIG | Borg create backup
+    #   shell: borg create -v --stats --list borg@192.168.11.160:/var/backup/::"etc-{now:%Y-%m-%d_%H:%M:%S}" /etc | logger -t borgbackup
+    #   environment:
+    #     BORG_NEW_PASSPHRASE: "secret"
+    #     # BORG_LOGGING_CONF:
+    #   tags:
+    #     - borg-create-backup
 #        fs_type: ext4
 
 #    - name: NGINX | configure logging
