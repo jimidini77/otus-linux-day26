@@ -1,5 +1,0 @@
-{
-    "yaml.schemas": {
-        "https://raw.githubusercontent.com/ansible/schemas/main/f/ansible.json#/$defs/playbook": "file:///e%3A/Study/OTUS.Administrator_Linux.Professional/day26/ansible/provision.yml"
-    }
-}
