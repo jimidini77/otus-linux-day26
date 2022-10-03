@@ -30,7 +30,7 @@ file_to_disk = './sata1.vdi'
 
   config.vm.define "backup" do |backup|
     backup.vm.box = "centos/7"
-    backup.vm.network "private_network", ip: "192.168.11.160"
+    backup.vm.network "private_network", ip: "192.168.56.160"
     backup.vm.hostname = "backup"
     backup.vm.provider :virtualbox do |vb|
       vb.customize ["modifyvm", :id, "--memory", "512"]
@@ -49,11 +49,18 @@ file_to_disk = './sata1.vdi'
 
   config.vm.define "client" do |client|
     client.vm.box = "centos/7"
-    client.vm.network "private_network", ip: "192.168.11.150"
+    client.vm.network "private_network", ip: "192.168.56.150"
     client.vm.hostname = "client"
     client.vm.provider :virtualbox do |vb|
       vb.customize ["modifyvm", :id, "--memory", "512"]
       vb.customize ["modifyvm", :id, "--cpus", "2"]
+    end
+    client.vm.provision "ansible" do |ansible|
+      ansible.playbook = "ansible/provision.yml"
+      ansible.inventory_path = "ansible/hosts"
+      ansible.host_key_checking = "false"
+      ansible.limit = "all"
+      ansible.verbose = "true"
     end
   end
 end
@@ -87,24 +94,28 @@ end
 Помещается публичный ключ `backup` сервера в список известных:
 ```yml
     - name: Tell client about backup server
-      shell: ssh-keyscan -H 192.168.11.160 >> ~/.ssh/known_hosts
+      shell: ssh-keyscan -H 192.168.56.160 >> ~/.ssh/known_hosts
 ```
-На сервере `backup` готовится диск для хранения бэкапов, выполняется создание раздела, форматирование, монтирование:
+На сервере `backup` готовится диск для хранения бэкапов, выполняется создание раздела, форматирование, монтирование, имя диска выбирается динамически:
 ```yml
 - name: BACKUP CONFIG | Disk Configuration
   hosts: backup
   become: true
   tasks:
+    - name: BACKUP CONFIG | Select disk name
+      shell: if [[ $(lsblk | grep sda1) ]]; then echo 'sdb'; else echo 'sda'; fi
+      register: backup_disk
+
     - name: BACKUP CONFIG | Create partition
       parted:
-        device: /dev/sdb
+        device: '/dev/{{ backup_disk.stdout }}'
         number: 1
         state: present
 
     - name: BACKUP CONFIG | Create filesystem
       filesystem:
         fstype: ext4
-        dev: /dev/sdb1
+        dev: '/dev/{{ backup_disk.stdout }}1'
 
     - name: BACKUP CONFIG | Create mount point
       file:
@@ -114,7 +125,7 @@ end
     - name: BACKUP CONFIG | Mount disk
       mount:
         path: /var/backup
-        src: /dev/sdb1
+        src: '/dev/{{ backup_disk.stdout }}1'
         state: mounted
         fstype: ext4
 
@@ -128,6 +139,9 @@ end
         path: /var/backup
         owner: borg
         group: borg
+
+    - name: BACKUP CONFIG | Borg init repo
+      shell: rm -rf /var/backup/*
 ```
 Ранее сгенерированный публичный ключ служебного пользователя помещается в список известных на сервере бэкапов:
 ```yml

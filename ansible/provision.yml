@@ -24,8 +24,8 @@
   hosts: client
   become: true
   vars:
-    backup_vm_ip: 192.168.11.160
-    client_vm_ip: 192.168.11.150
+    backup_vm_ip: 192.168.56.160
+    client_vm_ip: 192.168.56.150
   tasks:
     - name: CLIENT CONFIG | Create /root/.ssh/
       file:
@@ -55,7 +55,7 @@
         - client3
 
     - name: Tell client about backup server
-      shell: ssh-keyscan -H 192.168.11.160 >> ~/.ssh/known_hosts
+      shell: 'ssh-keyscan -H {{ backup_vm_ip }} >> ~/.ssh/known_hosts'
       tags:
         - client4
 
@@ -63,9 +63,13 @@
   hosts: backup
   become: true
   tasks:
+    - name: BACKUP CONFIG | Select disk name
+      shell: if [[ $(lsblk | grep sda1) ]]; then echo 'sdb'; else echo 'sda'; fi
+      register: backup_disk
+
     - name: BACKUP CONFIG | Create partition
       parted:
-        device: /dev/sdb
+        device: '/dev/{{ backup_disk.stdout }}'
         number: 1
         state: present
       tags:
@@ -74,7 +78,7 @@
     - name: BACKUP CONFIG | Create filesystem
       filesystem:
         fstype: ext4
-        dev: /dev/sdb1
+        dev: '/dev/{{ backup_disk.stdout }}1'
       tags:
         - disk
 
@@ -88,7 +92,7 @@
     - name: BACKUP CONFIG | Mount disk
       mount:
         path: /var/backup
-        src: /dev/sdb1
+        src: '/dev/{{ backup_disk.stdout }}1'
         state: mounted
         fstype: ext4
       tags:
@@ -132,12 +136,19 @@
         - ssh-config
         - backup5
 
+    - name: BACKUP CONFIG | Borg init repo
+      shell: rm -rf /var/backup/*
+      tags:
+        - borg
+
 - name: CLIENT CONFIG | Borg
   hosts: client
   become: true
+  vars:
+    backup_vm_ip: 192.168.56.160
   tasks:
     - name: CLIENT CONFIG | Borg init repo
-      shell: borg init --encryption=repokey borg@192.168.11.160:/var/backup/
+      shell: 'borg init --encryption=repokey borg@{{ backup_vm_ip }}:/var/backup/'
       environment:
         BORG_NEW_PASSPHRASE: "secret"
       tags:
