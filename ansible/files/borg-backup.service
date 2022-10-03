@@ -3,7 +3,7 @@ Description="Borg Backup"
 [Service]
 Type=oneshot
 Environment="BORG_PASSPHRASE=secret"
-Environment="REPO=borg@192.168.11.160:/var/backup/"
+Environment="REPO=borg@192.168.56.160:/var/backup/"
 Environment="BACKUP_TARGET=/etc"
 ExecStart=/bin/borg create --stats ${REPO}::etc-{now:%%Y-%%m-%%d_%%H:%%M:%%S} ${BACKUP_TARGET}
 ExecStart=/bin/borg check ${REPO}
